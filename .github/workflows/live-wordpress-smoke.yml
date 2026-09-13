@@ -1,0 +1,61 @@
+name: Smoke test live WordPress APIs
+
+on:
+  pull_request:
+    paths:
+      - "wordpress/**"
+      - ".github/workflows/live-wordpress-smoke.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "wordpress/**"
+      - ".github/workflows/live-wordpress-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Validate live Instagram, TV and Podcast
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Fetch live endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 2 --connect-timeout 15 --max-time 30 \
+            "https://zimnymagazine.com/wp-json/zimny/v1/instagram" \
+            --output /tmp/zimny-instagram.json
+          curl --fail --silent --show-error --retry 2 --connect-timeout 15 --max-time 30 \
+            "https://zimnymagazine.com/wp-json/zimny/v1/live-tv" \
+            --output /tmp/zimny-live-tv.json
+          curl --fail --silent --show-error --retry 2 --connect-timeout 15 --max-time 30 \
+            "https://zimnymagazine.com/wp-json/zimny/v1/podcast?limit=2" \
+            --output /tmp/zimny-podcast.json
+
+      - name: Validate response shapes
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const readJson = (path) => JSON.parse(fs.readFileSync(path, 'utf8'));
+          const instagram = readJson('/tmp/zimny-instagram.json');
+          const liveTv = readJson('/tmp/zimny-live-tv.json');
+          const podcast = readJson('/tmp/zimny-podcast.json');
+
+          if (!Array.isArray(instagram.posts) || instagram.posts.length === 0) {
+            throw new Error('Instagram endpoint returned no posts');
+          }
+          if (!liveTv.now_playing || !liveTv.now_playing.video_id) {
+            throw new Error('Live TV endpoint returned no current video');
+          }
+          if (!Array.isArray(podcast) || podcast.length === 0) {
+            throw new Error('Podcast endpoint returned no episodes');
+          }
+
+          console.log('Live WordPress endpoints returned valid data.');
+          NODE

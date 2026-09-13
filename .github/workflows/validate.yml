@@ -1,0 +1,40 @@
+name: Validate mobile app and WordPress plugins
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # SDK 54 still carries build-time Metro advisories that require a breaking
+      # SDK upgrade. Fail releases on critical findings; track the remaining
+      # upstream fixes separately.
+      - run: npm audit --omit=dev --audit-level=critical
+      - run: npx tsc --noEmit
+      - run: npx expo config --type public --json > /tmp/expo-config.json
+      - run: npx expo export --platform android --output-dir dist-android
+      - run: npx expo export --platform ios --output-dir dist-ios
+
+  wordpress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+      - name: Lint PHP files
+        run: find wordpress -type f -name '*.php' -print0 | xargs -0 -n1 php -l
